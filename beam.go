@@ -32,7 +32,7 @@ func main() {
 	s := p.Root()
 
 	// Load the data and parse each visit, ignoring parsing errors.
-	icol := textio.Read(s, "gs:///tmp/week_data.csv")
+	icol := textio.Read(s, "week_data.csv")
 	icol = beam.ParDo(s, func(s string, emit func(visit)) {
 		var visitorID, timeEntered string
 		var timeSpent, euros, weekday int
@@ -89,10 +89,6 @@ func main() {
 		return fmt.Sprintf("Weekday n°%d: total spend is %d euros", weekday, sum)
 	}, ocol)
 
-	textio.Write(s, "hdfs:///tmp/spend_per_weekday.txt", formatted)
-	// Wrapper around a number of runners, configurable via the
-	// --runner flag
-        if err := beamx.Run(context.Background(), p); err != nil {
-                log.Fatalf("Failed to execute job: %v", err)
-        }
+	textio.Write(s, "spend_per_weekday.txt", formatted)
+
 }
