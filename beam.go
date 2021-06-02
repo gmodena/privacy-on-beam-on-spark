@@ -4,38 +4,44 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
+	"flag"
 
 	"github.com/apache/beam/sdks/go/pkg/beam"
 	"github.com/apache/beam/sdks/go/pkg/beam/io/textio"
-	"github.com/apache/beam/sdks/go/pkg/beam/runners/direct"
+	"github.com/apache/beam/sdks/go/pkg/beam/x/beamx"
 	"github.com/google/differential-privacy/privacy-on-beam/pbeam"
 )
 
 
 func main() {
-	// visit contains the data corresponding to a single restaurant visit.
 	type visit struct {
-		visitorID  string
-		eurosSpent int
-		weekday    int
+		VisitorID  string
+		TimeEntered string
+		TimeSpent  int
+		EurosSpent int
+		Weekday    int
 	}
+	
+	// Parse beamx flags (e.r. --runner)
+	flag.Parse()
 
 	// Initialize the pipeline.
 	beam.Init()
 	p := beam.NewPipeline()
 	s := p.Root()
 
-
 	// Load the data and parse each visit, ignoring parsing errors.
-	icol := textio.Read(s, "week_data.csv")
+	icol := textio.Read(s, "gs:///tmp/week_data.csv")
 	icol = beam.ParDo(s, func(s string, emit func(visit)) {
-		var visitorID string
-		var euros, weekday int
-		_, err := fmt.Sscanf(s, "%s, %d, %d", &visitorID, &euros, &weekday)
+		var visitorID, timeEntered string
+		var timeSpent, euros, weekday int
+		log.Print(s)
+		_, err := fmt.Sscanf(s, "%s %s %d %d %d", &visitorID, &timeEntered, &timeSpent, &euros, &weekday)
 		if err != nil {
-			return
+			log.Fatal("Ooops", err)
 		}
-		emit(visit{visitorID, euros, weekday})
+		emit(visit{visitorID, timeEntered, timeSpent, euros, weekday})
 	}, icol)
 
 	// Transform the input PCollection into a PrivatePCollection.
@@ -45,14 +51,14 @@ func main() {
 	const ε, δ = 1, 1e-3
 
 	privacySpec := pbeam.NewPrivacySpec(ε, δ)
-	pcol := pbeam.MakePrivateFromStruct(s, icol, privacySpec, "visitorID")
+	pcol := pbeam.MakePrivateFromStruct(s, icol, privacySpec, "VisitorID")
 	// pcol is now a PrivatePCollection&lt;visit&gt;.
 
 	// Compute the differentially private sum-up revenue per weekday. To do so,
 	// we extract a KV pair, where the key is weekday and the value is the
 	// money spent.
 	pWeekdayEuros := pbeam.ParDo(s, func(v visit) (int, int) {
-		return v.weekday, v.eurosSpent
+		return v.Weekday, v.EurosSpent
 	}, pcol)
 	sumParams := pbeam.SumParams{
 		// There is only a single differentially private aggregation in this
@@ -82,10 +88,11 @@ func main() {
 	formatted := beam.ParDo(s, func(weekday int, sum int64) string {
 		return fmt.Sprintf("Weekday n°%d: total spend is %d euros", weekday, sum)
 	}, ocol)
-	textio.Write(s, "spend_per_weekday.txt", formatted)
 
-	// Execute the pipeline.
-	if _, err := direct.Execute(context.Background(), p); err != nil {
-		fmt.Printf("Pipeline failed: %v", err)
-	}
+	textio.Write(s, "hdfs:///tmp/spend_per_weekday.txt", formatted)
+	// Wrapper around a number of runners, configurable via the
+	// --runner flag
+        if err := beamx.Run(context.Background(), p); err != nil {
+                log.Fatalf("Failed to execute job: %v", err)
+        }
 }
