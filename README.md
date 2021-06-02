@@ -97,11 +97,26 @@ cd beam
 Will run spark, in-memory, in a docker container.
 
 ### Standalone local cluster
-The in-memory contaienr does not allow for much introspection. I'd like to access Spark UI, history, and logs.
+The in-memory container does not allow for much introspection. I'd like to access Spark UI, history, and logs.
 
-The following will setup a local Spark running in standalone mode.
+The following will setup a local Spark running in standalone mode:
 
-We can now instruct Beam to submit jobs to the local cluster by specifying the spark master url:
+```bash
+curl https://downloads.apache.org/spark/spark-2.4.8/spark-2.4.8-bin-hadoop2.7.tgz -o spark-2.4.8-bin-hadoop2.7.tgz
+tar xvfj spark-2.4.8-bin-hadoop2.7.tgz
+cd spark-2.4.8-bin-hadoop2.7
+./sbin/start-all.sh
+```
+The latter command will deploy a master/slave setup. It requires `sshd` for inter-service comunication (e.g. on macOS, you'll have to turn on Remote Login).
+
+On an occasion I had the Beam job fail due to insufficient resources on Spark. In that case, kiil (eventually) running spark processe and spin up master and slave manually with:
+```bash
+./sbin/start-master.sh
+./sbin/start-slave.sh -m 2048M -c 2
+```
+Where `-m` indicates how much memory to allocate to the worker process, and `-c` the number of cores.
+
+Finally, we can instruct Beam to submit jobs to the local cluster by specifying the spark master url:
 ```
 ./gradlew :runners:spark:2:job-server:runShadow add  -PsparkMasterUrl=spark://localhost:7077 
 ```
